@@ -1,3 +1,7 @@
+## 4.2.0-wip
+
+* Add `Parameters.id`, which exposes the id of the request being handled.
+
 ## 4.1.0
 
 * Forward errors within `Peer` when it is acting as a client.

@@ -28,7 +28,18 @@ class Parameters {
   /// will be automatically rejected. To avoid this, use [Parameter.valueOr].
   final dynamic value;
 
-  Parameters(this.method, this.value);
+  /// The id of the request that these parameters came from.
+  ///
+  /// This is `null` for notifications, and for requests that carry an explicit
+  /// `"id": null`. Those two cases can't be told apart through this field.
+  /// When it isn't `null`, it is a `String` or a `num`. Requests with any other
+  /// id are rejected before the method is called.
+  ///
+  /// Note that a method that takes no parameters isn't passed a [Parameters]
+  /// object, and can't see the id.
+  final Object? id;
+
+  Parameters(this.method, this.value, {this.id});
 
   /// Returns a single parameter.
   ///
@@ -47,16 +58,16 @@ class Parameters {
     if (key is int) {
       _assertPositional();
       if (key < value.length) {
-        return Parameter._(method, value[key], this, key);
+        return Parameter._(method, value[key], this, key, id: id);
       } else {
-        return _MissingParameter(method, this, key);
+        return _MissingParameter(method, this, key, id: id);
       }
     } else if (key is String) {
       _assertNamed();
       if (value.containsKey(key)) {
-        return Parameter._(method, value[key], this, key);
+        return Parameter._(method, value[key], this, key, id: id);
       } else {
-        return _MissingParameter(method, this, key);
+        return _MissingParameter(method, this, key, id: id);
       }
     } else {
       throw ArgumentError('Parameters[] only takes an int or a string, was '
@@ -154,7 +165,7 @@ class Parameter extends Parameters {
   /// Whether this parameter exists.
   bool get exists => true;
 
-  Parameter._(super.method, super.value, this._parent, this._key);
+  Parameter._(super.method, super.value, this._parent, this._key, {super.id});
 
   /// Returns [value], or [defaultValue] if this parameter wasn't passed.
   dynamic valueOr(Object? defaultValue) => value;
@@ -316,7 +327,7 @@ class _MissingParameter extends Parameter {
   @override
   bool get exists => false;
 
-  _MissingParameter(String method, Parameters parent, Object key)
+  _MissingParameter(String method, Parameters parent, Object key, {super.id})
       : super._(method, null, parent, key);
 
   @override

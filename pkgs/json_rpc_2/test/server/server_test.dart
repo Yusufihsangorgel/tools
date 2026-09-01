@@ -2,6 +2,7 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:json_rpc_2/error_code.dart' as error_code;
@@ -89,6 +90,73 @@ void main() {
             }
           }
         }));
+  });
+
+  test('passes the request id to the method', () {
+    controller.server
+        .registerMethod('foo', (json_rpc.Parameters params) => params.id);
+
+    expect(
+        controller
+            .handleRequest({'jsonrpc': '2.0', 'method': 'foo', 'id': 1234}),
+        completion(equals({'jsonrpc': '2.0', 'result': 1234, 'id': 1234})));
+  });
+
+  test('passes a string request id', () {
+    controller.server
+        .registerMethod('foo', (json_rpc.Parameters params) => params.id);
+
+    expect(
+        controller
+            .handleRequest({'jsonrpc': '2.0', 'method': 'foo', 'id': 'abc'}),
+        completion(equals({'jsonrpc': '2.0', 'result': 'abc', 'id': 'abc'})));
+  });
+
+  test('passes a null id for a notification', () {
+    final completer = Completer<Object?>();
+    controller.server.registerMethod('foo', (json_rpc.Parameters params) {
+      completer.complete(params.id);
+    });
+
+    expect(controller.handleRequest({'jsonrpc': '2.0', 'method': 'foo'}),
+        doesNotComplete);
+    expect(completer.future, completion(isNull));
+  });
+
+  test('passes a null id for an explicit `null` id', () {
+    controller.server
+        .registerMethod('foo', (json_rpc.Parameters params) => params.id);
+
+    expect(
+        controller
+            .handleRequest({'jsonrpc': '2.0', 'method': 'foo', 'id': null}),
+        completion(equals({'jsonrpc': '2.0', 'result': null, 'id': null})));
+  });
+
+  test('passes the request id to derived parameters', () {
+    controller.server.registerMethod('foo', (json_rpc.Parameters params) {
+      return [
+        params['bar'].id,
+        params['bar'][0].id,
+        params['bar'][5].id,
+        params['baz'].id
+      ];
+    });
+
+    expect(
+        controller.handleRequest({
+          'jsonrpc': '2.0',
+          'method': 'foo',
+          'params': {
+            'bar': ['value']
+          },
+          'id': 1234
+        }),
+        completion(equals({
+          'jsonrpc': '2.0',
+          'result': [1234, 1234, 1234, 1234],
+          'id': 1234
+        })));
   });
 
   test('doesn\'t return a result for a notification', () {

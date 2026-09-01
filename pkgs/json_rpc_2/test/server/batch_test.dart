@@ -47,6 +47,23 @@ void main() {
         ])));
   });
 
+  test('passes each request its own id', () {
+    controller.server
+        .registerMethod('request-id', (Parameters params) => params.id);
+
+    expect(
+        controller.handleRequest([
+          {'jsonrpc': '2.0', 'method': 'request-id', 'id': 1},
+          {'jsonrpc': '2.0', 'method': 'request-id', 'id': 2},
+          {'jsonrpc': '2.0', 'method': 'request-id', 'id': 3}
+        ]),
+        completion(equals([
+          {'jsonrpc': '2.0', 'result': 1, 'id': 1},
+          {'jsonrpc': '2.0', 'result': 2, 'id': 2},
+          {'jsonrpc': '2.0', 'result': 3, 'id': 3}
+        ])));
+  });
+
   test('handles errors individually', () {
     expect(
         controller.handleRequest([
