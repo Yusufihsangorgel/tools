@@ -10,6 +10,9 @@
 - `Resolver.resolve` now rejects `file:` URIs that fall outside the known
   package/SDK roots or the current directory, instead of resolving them
   unconditionally.
+- Add `includeUncovered` and `checkIgnoredLines` to `FileHitMapsFormatter`'s
+  `formatLcov` and `prettyPrint`, and `--include-uncovered` to `format_coverage`,
+  to report the package files that have no coverage data.
 
 ## 1.15.1
 

@@ -28,6 +28,7 @@ class Environment {
     required this.prettyPrintBranch,
     required this.reportOn,
     required this.ignoreFiles,
+    required this.includeUncovered,
     required this.sdkRoot,
     required this.verbose,
     required this.workers,
@@ -48,6 +49,7 @@ class Environment {
   bool prettyPrintBranch;
   List<String>? reportOn;
   List<String>? ignoreFiles;
+  List<String>? includeUncovered;
   String? sdkRoot;
   bool verbose;
   int workers;
@@ -95,6 +97,7 @@ Future<void> main(List<String> arguments) async {
           sdkRoot: env.sdkRoot,
         );
   final loader = Loader();
+  final includeUncovered = _includeUncovered(env);
   if (env.prettyPrint) {
     output = await hitmap.prettyPrint(
       resolver,
@@ -103,6 +106,8 @@ Future<void> main(List<String> arguments) async {
       ignoreGlobs: ignoreGlobs,
       reportFuncs: env.prettyPrintFunc,
       reportBranches: env.prettyPrintBranch,
+      includeUncovered: includeUncovered,
+      checkIgnoredLines: env.checkIgnore,
     );
   } else {
     assert(env.lcov);
@@ -111,6 +116,8 @@ Future<void> main(List<String> arguments) async {
       reportOn: env.reportOn,
       ignoreGlobs: ignoreGlobs,
       basePath: env.baseDirectory,
+      includeUncovered: includeUncovered,
+      checkIgnoredLines: env.checkIgnore,
     );
   }
 
@@ -249,6 +256,15 @@ Environment parseArgs(List<String> arguments, CoverageOptions defaultOptions) {
       defaultsTo: [],
       help: 'Ignore files by glob patterns',
     )
+    ..addMultiOption(
+      'include-uncovered',
+      help:
+          'Also report the Dart files of the package that match these glob '
+          'patterns, like --ignore-files, when no coverage was recorded for '
+          'them, for example because nothing imported them. Their lines are '
+          'reported as not covered. Not supported with --bazel, and not '
+          'counted by --fail-under.',
+    )
     ..addFlag('help', abbr: 'h', negatable: false, help: 'show this help');
 
   final args = parser.parse(arguments);
@@ -361,6 +377,13 @@ Environment parseArgs(List<String> arguments, CoverageOptions defaultOptions) {
 
   final checkIgnore = args['check-ignore'] as bool;
   final ignoredGlobs = args['ignore-files'] as List<String>;
+  final includeUncoveredRaw = args['include-uncovered'] as List<String>;
+  final includeUncovered = includeUncoveredRaw.isNotEmpty
+      ? includeUncoveredRaw
+      : null;
+  if (includeUncovered != null && bazel) {
+    fail('--include-uncovered is not supported with --bazel');
+  }
   final verbose = args['verbose'] as bool;
 
   double? failUnder;
@@ -391,11 +414,23 @@ Environment parseArgs(List<String> arguments, CoverageOptions defaultOptions) {
     prettyPrintBranch: prettyPrintBranch,
     reportOn: reportOn,
     ignoreFiles: ignoredGlobs,
+    includeUncovered: includeUncovered,
     sdkRoot: sdkRoot,
     verbose: verbose,
     workers: workers,
     failUnder: failUnder,
   );
+}
+
+/// Returns the function that tells whether an uncovered file should be
+/// reported, or `null` if `--include-uncovered` was not given.
+///
+/// The patterns are matched like the ones of `--ignore-files`.
+bool Function(String path)? _includeUncovered(Environment env) {
+  final globs = env.includeUncovered?.map(Glob.new).toList();
+  if (globs == null) return null;
+
+  return (path) => globs.any((glob) => glob.matches(path));
 }
 
 /// Given an absolute path absPath, this function returns a [List] of files
