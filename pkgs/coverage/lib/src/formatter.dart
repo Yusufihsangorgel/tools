@@ -109,6 +109,7 @@ extension FileHitMapsFormatter on Map<String, HitMap> {
     final files = _filesToReport(
       resolver,
       pathFilter,
+      loader: Loader(),
       includeUncovered: includeUncovered,
       checkIgnoredLines: checkIgnoredLines,
     );
@@ -159,27 +160,11 @@ extension FileHitMapsFormatter on Map<String, HitMap> {
   /// only function coverage information will be shown.
   ///
   /// If [includeUncovered] is provided, the `.dart` files below
-  /// [Resolver.packagePath] that have no entry in this map, for example
-  /// because nothing imported them, are also reported when the function
-  /// returns `true` for their absolute path. The function receives only the
-  /// paths that pass [reportOn] and [ignoreGlobs]. The directories whose names
-  /// start with a `.` are not searched. Without [includeUncovered], only the
-  /// files in this map are reported.
-  ///
-  /// There is no coverage data for such a file, so every line that is not
-  /// blank and does not start with `//` is reported with 0 hits. This is an
-  /// estimate: it counts every other line, including the ones that the Dart VM
-  /// would not report as code once the file is loaded, such as `import`
-  /// directives or lines with only a closing bracket. Files without such a
-  /// line are left out. Function and branch coverage is not reported for these
-  /// files, so [includeUncovered] has no effect when [reportFuncs] or
-  /// [reportBranches] is set.
-  ///
-  /// If [checkIgnoredLines] is `true`, the `coverage:ignore-*` comments are
-  /// applied to the files found this way, like in [HitMap.parseJson].
-  ///
-  /// Throws a [StateError] if [includeUncovered] has an effect and
-  /// [Resolver.packagePath] is `null`.
+  /// [Resolver.packagePath] with no entry in this map are also reported when
+  /// it returns `true` for their path, with every non-blank, non-`//` line at
+  /// 0 hits (an estimate; see [_uncoveredFiles]). [checkIgnoredLines] applies
+  /// `coverage:ignore-*` comments. Ignored when [reportFuncs] or
+  /// [reportBranches] is set. Throws a [StateError] without a package path.
   Future<String> prettyPrint(
     Resolver resolver,
     Loader loader, {
@@ -198,6 +183,7 @@ extension FileHitMapsFormatter on Map<String, HitMap> {
     final files = _filesToReport(
       resolver,
       pathFilter,
+      loader: loader,
       includeUncovered: reportFuncs || reportBranches ? null : includeUncovered,
       checkIgnoredLines: checkIgnoredLines,
     );
@@ -248,6 +234,7 @@ extension FileHitMapsFormatter on Map<String, HitMap> {
   List<_ReportedFile> _filesToReport(
     Resolver resolver,
     _PathFilter pathFilter, {
+    required Loader loader,
     required bool Function(String path)? includeUncovered,
     required bool checkIgnoredLines,
   }) {
@@ -274,6 +261,7 @@ extension FileHitMapsFormatter on Map<String, HitMap> {
           pathFilter,
           includeUncovered,
           checkIgnoredLines,
+          loader,
         ),
       );
     }
@@ -290,12 +278,26 @@ typedef _ReportedFile = (String path, HitMap hitMap);
 /// Returns the `.dart` files below [Resolver.packagePath] that are not in
 /// [covered], are accepted by [pathFilter] and [includeUncovered], and have at
 /// least one line that can hold code, sorted by path.
+///
+/// Only paths that pass [pathFilter] are passed to [includeUncovered]. The
+/// directories whose names start with a `.` are not searched.
+///
+/// There is no coverage data for such a file, so every line that is not
+/// blank and does not start with `//` is reported with 0 hits. This is an
+/// estimate: it counts every other line, including the ones that the Dart VM
+/// would not report as code once the file is loaded, such as `import`
+/// directives or lines with only a closing bracket. Files without such a
+/// line are left out.
+///
+/// If [checkIgnoredLines] is `true`, the `coverage:ignore-*` comments are
+/// applied to the files found this way, like in [HitMap.parseJson].
 List<_ReportedFile> _uncoveredFiles(
   Resolver resolver,
   Set<String> covered,
   _PathFilter pathFilter,
   bool Function(String path) includeUncovered,
   bool checkIgnoredLines,
+  Loader loader,
 ) {
   final packagePath = resolver.packagePath;
   if (packagePath == null) {
@@ -317,7 +319,6 @@ List<_ReportedFile> _uncoveredFiles(
     }
   }
 
-  final loader = Loader();
   final result = <_ReportedFile>[];
   for (final path in paths.toList()..sort()) {
     final lines = loader.loadSync(path);

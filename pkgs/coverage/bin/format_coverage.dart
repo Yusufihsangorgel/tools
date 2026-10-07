@@ -262,8 +262,9 @@ Environment parseArgs(List<String> arguments, CoverageOptions defaultOptions) {
           'Also report the Dart files of the package that match these glob '
           'patterns, like --ignore-files, when no coverage was recorded for '
           'them, for example because nothing imported them. Their lines are '
-          'reported as not covered. Not supported with --bazel, and not '
-          'counted by --fail-under.',
+          'reported as not covered. Not supported with --bazel, '
+          '--pretty-print-func or --pretty-print-branch, and not counted by '
+          '--fail-under.',
     )
     ..addFlag('help', abbr: 'h', negatable: false, help: 'show this help');
 
@@ -383,6 +384,12 @@ Environment parseArgs(List<String> arguments, CoverageOptions defaultOptions) {
       : null;
   if (includeUncovered != null && bazel) {
     fail('--include-uncovered is not supported with --bazel');
+  }
+  if (includeUncovered != null && (prettyPrintFunc || prettyPrintBranch)) {
+    fail(
+      '--include-uncovered is not supported with --pretty-print-func or '
+      '--pretty-print-branch',
+    );
   }
   final verbose = args['verbose'] as bool;
 

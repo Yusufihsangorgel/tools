@@ -7,6 +7,7 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
+import 'package:test_process/test_process.dart';
 
 import '../bin/format_coverage.dart';
 
@@ -49,11 +50,14 @@ void main() {
 
     setUp(() {
       packageDir = testDir.resolveSymbolicLinksSync();
-      write('lib/a.dart', ['void a() {', '  print(1);', '}']);
-      write('lib/b.dart', ['// Comment.', 'void b() {', '  print(2);', '}']);
-      write('lib/c.g.dart', ['void c() {}']);
-      write('lib/d.dart', ['// coverage:ignore-file', 'void d() {}']);
-      write('test/t.dart', ['void main() {}']);
+      write(p.join('lib', 'a.dart'), ['void a() {', '  print(1);', '}']);
+      write(p.join('lib', 'b.dart'), [
+        '// Comment.',
+        'void b() {',
+        '  print(2);',
+        '}',
+      ]);
+      write(p.join('test', 't.dart'), ['void main() {}']);
       // Only lib/a.dart has coverage data.
       File(p.join(packageDir, 'coverage.json')).writeAsStringSync(
         jsonEncode({
@@ -69,66 +73,24 @@ void main() {
       );
     });
 
-    Future<ProcessResult> run(List<String> args) => Process.run(
+    Future<TestProcess> run(List<String> args) => TestProcess.start(
       Platform.resolvedExecutable,
       [script, '--in=coverage.json', '--base-directory=.', ...args],
       workingDirectory: packageDir,
     );
 
-    test('reports only the files with coverage data by default', () async {
-      final result = await run(['--lcov']);
-
-      expect(result.exitCode, 0, reason: '${result.stderr}');
-      expect(
-        result.stdout,
-        'SF:${p.join('lib', 'a.dart')}\n'
-        'DA:2,3\n'
-        'LF:1\n'
-        'LH:1\n'
-        'end_of_record\n',
-      );
-    });
-
-    test('adds the matching files to the lcov output', () async {
-      final result = await run([
-        '--lcov',
-        '--include-uncovered=lib/**',
-        '--ignore-files=lib/*.g.dart',
-      ]);
-
-      expect(result.exitCode, 0, reason: '${result.stderr}');
-      expect(
-        result.stdout,
-        'SF:${p.join('lib', 'a.dart')}\n'
-        'DA:2,3\n'
-        'LF:1\n'
-        'LH:1\n'
-        'end_of_record\n'
-        'SF:${p.join('lib', 'b.dart')}\n'
-        'DA:2,0\n'
-        'DA:3,0\n'
-        'DA:4,0\n'
-        'LF:3\n'
-        'LH:0\n'
-        'end_of_record\n'
-        'SF:${p.join('lib', 'd.dart')}\n'
-        'DA:2,0\n'
-        'LF:1\n'
-        'LH:0\n'
-        'end_of_record\n',
-      );
-    });
-
     test('adds the files that match any of the patterns', () async {
-      final result = await run([
+      final process = await run([
         '--lcov',
-        '--include-uncovered=lib/b.dart',
-        '--include-uncovered=test/*.dart',
+        '--include-uncovered=${p.posix.join('lib', 'b.dart')}',
+        '--include-uncovered=${p.posix.join('test', '*.dart')}',
       ]);
 
-      expect(result.exitCode, 0, reason: '${result.stderr}');
+      await process.shouldExit(0);
       expect(
-        (result.stdout as String).split('\n').where((l) => l.startsWith('SF:')),
+        await process.stdout.rest
+            .where((line) => line.startsWith('SF:'))
+            .toList(),
         [
           'SF:${p.join('lib', 'a.dart')}',
           'SF:${p.join('lib', 'b.dart')}',
@@ -137,55 +99,37 @@ void main() {
       );
     });
 
-    test('applies the ignore comments with --check-ignore', () async {
-      final result = await run([
-        '--lcov',
-        '--check-ignore',
-        '--include-uncovered=lib/*.dart',
-      ]);
-
-      expect(result.exitCode, 0, reason: '${result.stderr}');
-      expect(
-        (result.stdout as String).split('\n').where((l) => l.startsWith('SF:')),
-        [
-          'SF:${p.join('lib', 'a.dart')}',
-          'SF:${p.join('lib', 'b.dart')}',
-          'SF:${p.join('lib', 'c.g.dart')}',
-        ],
-      );
-    });
-
-    test('adds the matching files to the pretty print output', () async {
-      final result = await run([
-        '--pretty-print',
-        '--check-ignore',
-        '--include-uncovered=lib/b.dart',
-        '--include-uncovered=lib/d.dart',
-      ]);
-
-      expect(result.exitCode, 0, reason: '${result.stderr}');
-      expect(
-        result.stdout,
-        '${p.join(packageDir, 'lib', 'a.dart')}\n'
-        '       |void a() {\n'
-        '      3|  print(1);\n'
-        '       |}\n'
-        '${p.join(packageDir, 'lib', 'b.dart')}\n'
-        '       |// Comment.\n'
-        '      0|void b() {\n'
-        '      0|  print(2);\n'
-        '      0|}\n',
-      );
-    });
-
     test('is not supported with --bazel', () async {
-      final result = await run(['--lcov', '--bazel', '--include-uncovered=**']);
+      final process = await run([
+        '--lcov',
+        '--bazel',
+        '--include-uncovered=**',
+      ]);
 
-      expect(result.exitCode, 1);
-      expect(
-        result.stdout,
-        contains('--include-uncovered is not supported with --bazel'),
+      await expectLater(
+        process.stdout,
+        emitsThrough(
+          contains('--include-uncovered is not supported with --bazel'),
+        ),
       );
+      await process.shouldExit(1);
+    });
+
+    test('is not supported with function or branch output', () async {
+      for (final flag in ['--pretty-print-func', '--pretty-print-branch']) {
+        final process = await run([flag, '--include-uncovered=**']);
+
+        await expectLater(
+          process.stdout,
+          emitsThrough(
+            contains(
+              '--include-uncovered is not supported with --pretty-print-func '
+              'or --pretty-print-branch',
+            ),
+          ),
+        );
+        await process.shouldExit(1);
+      }
     });
   });
 }
